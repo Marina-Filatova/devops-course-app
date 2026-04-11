@@ -21,14 +21,14 @@ pipeline {
                         Lint: {
                             sh '''
                                 echo "Date: $(date)" >> lint_report.txt
-                                sh 'docker run --rm -i hadolint/hadolint hadolint - < Dockerfile >> lint_report.txt 2>&1 || true'
+                                docker run --rm -i hadolint/hadolint < Dockerfile >> lint_report.txt 2>&1 || echo "Lint scan completed" >> lint_report.txt
                             '''
                             archiveArtifacts artifacts: 'lint_report.txt'
                         },
                         SAST: {
                             sh '''
                             echo "Date: $(date)" >> sast_report.txt
-                            sh 'bandit -r . -f txt -o sast_report.txt || true'
+                           bandit -r . -f txt >> sast_report.txt 2>&1 || echo "Bandit scan completed" >> sast_report.txt
                             '''
                             archiveArtifacts artifacts: 'sast_report.txt'
                         }
