@@ -20,14 +20,14 @@ pipeline {
                     parallel(
                         Lint: {
                             sh '''
-                                echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> lint_report.txt
+                                echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" > lint_report.txt
                                 docker run --rm -i hadolint/hadolint < Dockerfile >> lint_report.txt 2>&1 || echo "Lint scan completed" >> lint_report.txt
                             '''
                             archiveArtifacts artifacts: 'lint_report.txt'
                         },
                         SAST: {
                             sh '''
-                            echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" >> sast_report.txt
+                            echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" > sast_report.txt
                            bandit -r . -f txt >> sast_report.txt 2>&1 || echo "Bandit scan completed" >> sast_report.txt
                             '''
                             archiveArtifacts artifacts: 'sast_report.txt'
