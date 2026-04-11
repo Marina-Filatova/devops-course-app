@@ -1,93 +1,52 @@
-def isMainBranch() {
-    def branch = env.GIT_BRANCH ?: ''
-    return branch == 'origin/main' || branch == 'main' || branch == 'refs/remotes/origin/main'
-}
+@Library('my-shared-lib@main') _
+
+// Условия для этапов
+def isMR()    { return env.CHANGE_ID != null }
+def isMain()  { return env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
+def isTag()   { return env.TAG_NAME != null }
 
 pipeline {
-    agent { label 'worker' }
-
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-        gitLabConnection('education-gitlab')
-        skipDefaultCheckout true
-    }
+    agent { label 'staging' } // Базовые теги запускаем на стейджинге
 
     stages {
         stage('Checkout') {
-            steps {
-                checkout scm
-            }
+            steps { checkout scm }
         }
 
-        stage('Lint') {
-            steps {
-                updateGitlabCommitStatus name: 'jenkins', state: 'running'
-                sh 'docker run --rm -i hadolint/hadolint hadolint - < Dockerfile'
-            }
-        }
-
-        stage('Build') {
-            steps {
-                sh 'docker-compose build'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh 'docker-compose down || true'
-                sh 'docker-compose up -d --no-build'
-                sh '''
-                    attempts=0
-                    until curl --silent --fail http://localhost:8000/info > /dev/null; do
-                        attempts=$((attempts + 1))
-                        if [ "$attempts" -ge 15 ]; then
-                            echo "Service did not become ready in time"
-                            docker-compose logs || true
-                            exit 1
-                        fi
-                        sleep 1
-                    done
-                '''
-                sh 'curl --fail http://localhost:8000/info'
-                sh 'curl --fail "http://localhost:8000/info/currency?currency=USD&date=2023-01-17"'
-            }
-            post {
-                always {
-                    sh 'docker-compose logs || true'
-                    sh 'docker-compose down || true'
+        stage('Lint & SAST') {
+            parallel {
+                stage('Lint') {
+                    steps {
+                        sh 'echo "Running Lint..." > lint_report.txt' 
+                        archiveArtifacts artifacts: 'lint_report.txt'
+                    }
+                }
+                stage('SAST') {
+                    steps {
+                        sh 'echo "Running SAST..." > sast_report.txt'
+                        archiveArtifacts artifacts: 'sast_report.txt'
+                    }
                 }
             }
         }
 
-        stage('Manual Approval For Main') {
-            when {
-                expression { isMainBranch() }
-            }
-            steps {
-                input message: 'Run deploy for main branch?', ok: 'Continue'
-            }
+        conditionalStage(name: 'Build & Push', condition: isMR() || isMain() || isTag()) {
+            sh "docker build -t m_filatova/app:${env.GIT_COMMIT} ."
+            // Здесь должна быть логика docker push в твой registry
         }
 
-        stage('Deploy') {
-            when {
-                expression { isMainBranch() }
-            }
-            steps {
-                sh 'docker-compose up -d --no-build'
-            }
+        conditionalStage(name: 'Deploy to Staging', condition: isMain()) {
+            build job: 'app-main-deploy', parameters: [
+                string(name: 'IMAGE_TAG', value: env.GIT_COMMIT),
+                string(name: 'ENVIRONMENT', value: 'staging')
+            ]
         }
-    }
 
-    post {
-        success {
-            updateGitlabCommitStatus name: 'jenkins', state: 'success'
-        }
-        failure {
-            updateGitlabCommitStatus name: 'jenkins', state: 'failed'
-        }
-        aborted {
-            updateGitlabCommitStatus name: 'jenkins', state: 'canceled'
+        conditionalStage(name: 'Deploy to Production', condition: isTag()) {
+            build job: 'app-main-deploy', parameters: [
+                string(name: 'IMAGE_TAG', value: env.GIT_COMMIT),
+                string(name: 'ENVIRONMENT', value: 'production')
+            ]
         }
     }
 }

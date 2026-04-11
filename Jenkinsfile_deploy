@@ -1,0 +1,22 @@
+@Library('my-shared-lib@main') _
+
+pipeline {
+    agent { 
+        label "${params.ENVIRONMENT}" 
+    }
+
+    stages {
+        stage('Deploy Application') {
+            steps {
+                echo "Deploying version ${params.IMAGE_TAG} to ${params.ENVIRONMENT}"
+                sh "docker stop app || true && docker rm app || true"
+                sh "docker run -d --name app -p 8000:8000 m_filatova/app:${params.IMAGE_TAG}"
+            }
+        }
+        stage('Verify') {
+            steps {
+                runSmokeTest("http://localhost:8000/info")
+            }
+        }
+    }
+}
