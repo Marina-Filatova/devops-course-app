@@ -19,13 +19,17 @@ pipeline {
                 script {
                     parallel(
                         Lint: {
-                            sh 'echo "Running Lint..." > lint_report.txt'
-                            sh 'docker run --rm -i hadolint/hadolint hadolint - < Dockerfile >> lint_report.txt 2>&1 || true'
+                            sh '''
+                                echo "Date: $(date)" >> lint_report.txt
+                                sh 'docker run --rm -i hadolint/hadolint hadolint - < Dockerfile >> lint_report.txt 2>&1 || true'
+                            '''
                             archiveArtifacts artifacts: 'lint_report.txt'
                         },
                         SAST: {
-                            sh 'pip3 install bandit 2>/dev/null || pip install bandit'
+                            sh '''
+                            echo "Date: $(date)" >> sast_report.txt
                             sh 'bandit -r . -f txt -o sast_report.txt || true'
+                            '''
                             archiveArtifacts artifacts: 'sast_report.txt'
                         }
                     )
