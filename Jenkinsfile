@@ -1,7 +1,7 @@
 @Library('my-shared-lib@main') _
 
 def isMR()    { return env.CHANGE_ID != null }
-def isMain()  { return env.BRANCH_NAME == 'test-main' || env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
+def isMain()  { return env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
 def isTag()   { return env.TAG_NAME != null }
 
 pipeline {
