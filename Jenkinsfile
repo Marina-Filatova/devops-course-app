@@ -33,47 +33,68 @@ pipeline {
             }
         }
 
-        conditionalStage(name: 'Build & Push', condition: isMR() || isMain() || isTag()) {
-            script {
-                def imageTag = env.TAG_NAME ?: env.BRANCH_NAME.replace('/', '-')
-                def fullImageName = "mfilatova/currency-rest-api:${imageTag}"
-                
-                echo "Building image: ${fullImageName}"
-                sh "docker build -t ${fullImageName} ."
-                
-                if (isMain() || isTag()) {
-                    echo "Pushing to Docker Hub..."
-                    withCredentials([usernamePassword(
-                        credentialsId: 'docker-hub-credentials',
-                        usernameVariable: 'DOCKER_USER',
-                        passwordVariable: 'DOCKER_PASS'
-                    )]) {
-                        sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
-                        sh "docker push ${fullImageName}"
-                    }
+        stage ('Build'){
+            when {
+                anyOf {
+                    expression { isMR() }
+                    expression { isMain() }
+                    expression { isTag() }
                 }
-                
-                env.IMAGE_TAG_FOR_DEPLOY = imageTag
+            }
+            steps{
+                script {
+                    def imageTag = env.TAG_NAME ?: env.BRANCH_NAME.replace('/', '-')
+                    def fullImageName = "mfilatova/currency-rest-api:${imageTag}"
+                    
+                    echo "Building image: ${fullImageName}"
+                    sh "docker build -t ${fullImageName} ."
+                    
+                    if (isMain() || isTag()) {
+                        echo "Pushing to Docker Hub..."
+                        withCredentials([usernamePassword(
+                            credentialsId: 'docker-hub-credentials',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                            sh "docker push ${fullImageName}"
+                        }
+                    }
+                    
+                    env.IMAGE_TAG_FOR_DEPLOY = imageTag
+                }
+            }   
+        }
+
+        stage('Deploy to Staging'){
+            when{
+                expression { isMain() }
+            }
+            steps{
+                script {
+                    echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to staging..."
+                    build job: 'app-main-deploy', parameters: [
+                        string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
+                        string(name: 'ENVIRONMENT', value: 'staging')
+                    ]
+                }
             }
         }
 
-        conditionalStage(name: 'Deploy to Staging', condition: isMain()) {
-            script {
-                echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to staging..."
-                build job: 'app-main-deploy', parameters: [
-                    string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
-                    string(name: 'ENVIRONMENT', value: 'staging')
-                ]
+        stage('Deploy to Production'){
+            when{
+                expression{
+                    isTag()
+                }
             }
-        }
-
-        conditionalStage(name: 'Deploy to Production', condition: isTag()) {
-            script {
-                echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to production..."
-                build job: 'app-main-deploy', parameters: [
-                    string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
-                    string(name: 'ENVIRONMENT', value: 'production')
-                ]
+            steps{
+                script {
+                    echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to production..."
+                    build job: 'app-main-deploy', parameters: [
+                        string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
+                        string(name: 'ENVIRONMENT', value: 'production')
+                    ]
+                }
             }
         }
     }
