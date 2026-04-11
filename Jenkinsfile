@@ -1,93 +1,108 @@
-def isMainBranch() {
-    def branch = env.GIT_BRANCH ?: ''
-    return branch == 'origin/main' || branch == 'main' || branch == 'refs/remotes/origin/main'
+def isMergeRequestBuild() {
+    return env.CHANGE_ID?.trim()
+}
+
+def isMainlineBranch() {
+    return env.BRANCH_NAME in ['main', 'master']
+}
+
+def isReleaseTag() {
+    return env.TAG_NAME?.trim() && env.TAG_NAME.startsWith('v')
 }
 
 pipeline {
-    agent { label 'worker' }
+    agent none
 
     options {
         timestamps()
         disableConcurrentBuilds()
-        gitLabConnection('education-gitlab')
         skipDefaultCheckout true
     }
 
     stages {
         stage('Checkout') {
+            agent { label 'staging' }
             steps {
                 checkout scm
+                sh 'mkdir -p reports'
+                echo "BRANCH_NAME=${env.BRANCH_NAME}"
+                echo "CHANGE_ID=${env.CHANGE_ID ?: ''}"
+                echo "TAG_NAME=${env.TAG_NAME ?: ''}"
             }
         }
 
-        stage('Lint') {
-            steps {
-                updateGitlabCommitStatus name: 'jenkins', state: 'running'
-                sh 'docker run --rm -i hadolint/hadolint hadolint - < Dockerfile'
-            }
-        }
+        stage('Lint And SAST') {
+            parallel {
+                stage('Lint') {
+                    agent { label 'staging' }
+                    steps {
+                        checkout scm
+                        sh 'mkdir -p reports'
+                        sh '''
+                            docker run --rm \
+                              -v "$PWD:/work" \
+                              -w /work \
+                              hadolint/hadolint:latest \
+                              hadolint Dockerfile -f json > reports/hadolint.json
+                        '''
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'reports/hadolint.json', allowEmptyArchive: true, fingerprint: true
+                        }
+                    }
+                }
 
-        stage('Build') {
-            steps {
-                sh 'docker-compose build'
-            }
-        }
-
-        stage('Test') {
-            steps {
-                sh 'docker-compose down || true'
-                sh 'docker-compose up -d --no-build'
-                sh '''
-                    attempts=0
-                    until curl --silent --fail http://localhost:8000/info > /dev/null; do
-                        attempts=$((attempts + 1))
-                        if [ "$attempts" -ge 15 ]; then
-                            echo "Service did not become ready in time"
-                            docker-compose logs || true
-                            exit 1
-                        fi
-                        sleep 1
-                    done
-                '''
-                sh 'curl --fail http://localhost:8000/info'
-                sh 'curl --fail "http://localhost:8000/info/currency?currency=USD&date=2023-01-17"'
-            }
-            post {
-                always {
-                    sh 'docker-compose logs || true'
-                    sh 'docker-compose down || true'
+                stage('SAST') {
+                    agent { label 'staging' }
+                    steps {
+                        checkout scm
+                        sh 'mkdir -p reports'
+                        sh '''
+                            docker run --rm \
+                              -v "$PWD:/work" \
+                              -w /work \
+                              pycqa/bandit:latest \
+                              -r . -f json -o reports/bandit.json
+                        '''
+                    }
+                    post {
+                        always {
+                            archiveArtifacts artifacts: 'reports/bandit.json', allowEmptyArchive: true, fingerprint: true
+                        }
+                    }
                 }
             }
         }
 
-        stage('Manual Approval For Main') {
+        stage('Build') {
             when {
-                expression { isMainBranch() }
+                expression {
+                    return isMergeRequestBuild() || isMainlineBranch() || isReleaseTag()
+                }
             }
+            agent { label 'staging' }
             steps {
-                input message: 'Run deploy for main branch?', ok: 'Continue'
+                checkout scm
+                sh 'docker build -t app-main:test .'
             }
         }
 
-        stage('Deploy') {
-            when {
-                expression { isMainBranch() }
-            }
+        stage('Pipeline Type') {
+            agent { label 'staging' }
             steps {
-                sh 'docker-compose up -d --no-build'
+                script {
+                    if (isReleaseTag()) {
+                        echo 'Release tag pipeline detected.'
+                    } else if (isMainlineBranch()) {
+                        echo 'Main/master pipeline detected.'
+                    } else if (isMergeRequestBuild()) {
+                        echo 'Merge request pipeline detected.'
+                    } else {
+                        echo 'Feature branch pipeline detected.'
+                    }
+                }
             }
-        }
-    }
-
-    post {
-        success {
-            updateGitlabCommitStatus name: 'jenkins', state: 'success'
-        }
-        failure {
-            updateGitlabCommitStatus name: 'jenkins', state: 'failed'
-        }
-        aborted {
-            updateGitlabCommitStatus name: 'jenkins', state: 'canceled'
         }
     }
 }
