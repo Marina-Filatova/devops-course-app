@@ -4,10 +4,7 @@ def isMR()    { return env.CHANGE_ID != null }
 def isMain()  { return env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
 def isTag()   { return env.TAG_NAME != null }
 
-pipeline {
-    agent { label 'staging' }
-
-    stages {
+node('staging') {
         stage('Checkout') {
                 checkout scm
         }
@@ -60,11 +57,10 @@ pipeline {
                 echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to ${environment}..."
                 build job: 'app-main-deploy', parameters: [
                     string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
-                    string(name: 'ENVIRONMENT', value: 'staging')
+                    string(name: 'ENVIRONMENT', value: environment)
                 ]
             }
         }
-    }
     
     if (currentBuild.result == null || currentBuild.result == 'SUCCESS'){
         echo "Pipeline finished with status: SUCCESS"
