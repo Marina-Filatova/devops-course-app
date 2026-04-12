@@ -9,14 +9,10 @@ pipeline {
 
     stages {
         stage('Checkout') {
-            steps {
                 checkout scm
-            }
         }
 
         stage('Lint & SAST') {
-            steps {
-                script {
                     parallel(
                         Lint: {
                             sh '''
@@ -33,20 +29,10 @@ pipeline {
                             archiveArtifacts artifacts: 'sast_report.txt'
                         }
                     )
-                }
-            }
         }
 
-        stage ('Build'){
-            when {
-                anyOf {
-                    expression { isMR() }
-                    expression { isMain() }
-                    expression { isTag() }
-                }
-            }
-            steps{
-                script {
+        if (isMR() || isMain() || isTag() {
+            stage ('Build'){
                     def imageTag = env.TAG_NAME ?: env.BRANCH_NAME.replace('/', '-')
                     def fullImageName = "mfilatova/currency-rest-api:${imageTag}"
                     
@@ -63,49 +49,27 @@ pipeline {
                             sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
                             sh "docker push ${fullImageName}"
                         }
-                    }
-                    
+                    }                   
                     env.IMAGE_TAG_FOR_DEPLOY = imageTag
-                }
-            }   
-        }
-
-        stage('Deploy to Staging'){
-            when{
-                expression { isMain() }
-            }
-            steps{
-                script {
-                    echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to staging..."
-                    build job: 'app-main-deploy', parameters: [
-                        string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
-                        string(name: 'ENVIRONMENT', value: 'staging')
-                    ]
-                }
             }
         }
-
-        stage('Deploy to Production'){
-            when{
-                expression{
-                    isTag()
-                }
-            }
-            steps{
-                script {
-                    echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to production..."
-                    build job: 'app-main-deploy', parameters: [
-                        string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
-                        string(name: 'ENVIRONMENT', value: 'production')
-                    ]
-                }
+        
+        if (isMain() || isTag()){
+            stage('Deploy'){
+                def environment = isMain() ? 'staging' : 'production'
+                echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to ${environment}..."
+                build job: 'app-main-deploy', parameters: [
+                    string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
+                    string(name: 'ENVIRONMENT', value: 'staging')
+                ]
             }
         }
     }
     
-    post {
-        always {
-            echo "Pipeline finished with status: ${currentBuild.result}"
-        }
+    if (currentBuild.result == null || currentBuild.result == 'SUCCESS'){
+        echo "Pipeline finished with status: SUCCESS"
+    }
+    else {
+        echo "Pipeline finished with status: ${currentBuild.result}"
     }
 }
