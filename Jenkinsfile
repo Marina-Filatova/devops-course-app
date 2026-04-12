@@ -31,7 +31,7 @@ pipeline {
                     )
         }
 
-        if (isMR() || isMain() || isTag() {
+        if (isMR() || isMain() || isTag()) {
             stage ('Build'){
                     def imageTag = env.TAG_NAME ?: env.BRANCH_NAME.replace('/', '-')
                     def fullImageName = "mfilatova/currency-rest-api:${imageTag}"
