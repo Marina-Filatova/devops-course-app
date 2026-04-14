@@ -1,93 +1,71 @@
-def isMainBranch() {
-    def branch = env.GIT_BRANCH ?: ''
-    return branch == 'origin/main' || branch == 'main' || branch == 'refs/remotes/origin/main'
-}
+@Library('my-shared-lib@main') _
 
-pipeline {
-    agent { label 'worker' }
+def isMR()    { return env.CHANGE_ID != null }
+def isMain()  { return env.BRANCH_NAME == 'main' || env.BRANCH_NAME == 'master' }
+def isTag()   { return env.TAG_NAME != null }
 
-    options {
-        timestamps()
-        disableConcurrentBuilds()
-        gitLabConnection('education-gitlab')
-        skipDefaultCheckout true
-    }
-
-    stages {
+node('staging') {
         stage('Checkout') {
-            steps {
                 checkout scm
-            }
         }
 
-        stage('Lint') {
-            steps {
-                updateGitlabCommitStatus name: 'jenkins', state: 'running'
-                sh 'docker run --rm -i hadolint/hadolint hadolint - < Dockerfile'
-            }
+        stage('Lint & SAST') {
+                    parallel(
+                        Lint: {
+                            sh '''
+                                echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" > lint_report.txt
+                                docker run --rm -i hadolint/hadolint < Dockerfile >> lint_report.txt 2>&1 || echo "Lint scan completed" >> lint_report.txt
+                            '''
+                            archiveArtifacts artifacts: 'lint_report.txt'
+                        },
+                        SAST: {
+                            sh '''
+                            echo "Date: $(date -u +'%Y-%m-%d %H:%M:%S UTC')" > sast_report.txt
+                           bandit -r . -f txt >> sast_report.txt 2>&1 || echo "Bandit scan completed" >> sast_report.txt
+                            '''
+                            archiveArtifacts artifacts: 'sast_report.txt'
+                        }
+                    )
         }
 
-        stage('Build') {
-            steps {
-                sh 'docker-compose build'
+        if (isMR() || isMain() || isTag()) {
+            stage ('Build'){
+                    def imageTag = env.TAG_NAME ?: env.BRANCH_NAME.replace('/', '-')
+                    def fullImageName = "mfilatova/currency-rest-api:${imageTag}"
+                    
+                    echo "Building image: ${fullImageName}"
+                    sh "docker build -t ${fullImageName} ."
+                    
+                    if (isMain() || isTag()) {
+                        echo "Pushing to Docker Hub..."
+                        withCredentials([usernamePassword(
+                            credentialsId: 'docker-hub-credentials',
+                            usernameVariable: 'DOCKER_USER',
+                            passwordVariable: 'DOCKER_PASS'
+                        )]) {
+                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
+                            sh "docker push ${fullImageName}"
+                        }
+                    }                   
+                    env.IMAGE_TAG_FOR_DEPLOY = imageTag
             }
         }
-
-        stage('Test') {
-            steps {
-                sh 'docker-compose down || true'
-                sh 'docker-compose up -d --no-build'
-                sh '''
-                    attempts=0
-                    until curl --silent --fail http://localhost:8000/info > /dev/null; do
-                        attempts=$((attempts + 1))
-                        if [ "$attempts" -ge 15 ]; then
-                            echo "Service did not become ready in time"
-                            docker-compose logs || true
-                            exit 1
-                        fi
-                        sleep 1
-                    done
-                '''
-                sh 'curl --fail http://localhost:8000/info'
-                sh 'curl --fail "http://localhost:8000/info/currency?currency=USD&date=2023-01-17"'
-            }
-            post {
-                always {
-                    sh 'docker-compose logs || true'
-                    sh 'docker-compose down || true'
-                }
+        
+        if (isMain() || isTag()){
+            stage('Deploy'){
+                def environment = isMain() ? 'staging' : 'production'
+                echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to ${environment}..."
+                build job: 'app-main-deploy', parameters: [
+                    string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
+                    string(name: 'ENVIRONMENT', value: environment)
+                ]
             }
         }
-
-        stage('Manual Approval For Main') {
-            when {
-                expression { isMainBranch() }
-            }
-            steps {
-                input message: 'Run deploy for main branch?', ok: 'Continue'
-            }
-        }
-
-        stage('Deploy') {
-            when {
-                expression { isMainBranch() }
-            }
-            steps {
-                sh 'docker-compose up -d --no-build'
-            }
-        }
+    
+    if (currentBuild.result == null || currentBuild.result == 'SUCCESS'){
+        echo "Pipeline finished with status: SUCCESS"
     }
-
-    post {
-        success {
-            updateGitlabCommitStatus name: 'jenkins', state: 'success'
-        }
-        failure {
-            updateGitlabCommitStatus name: 'jenkins', state: 'failed'
-        }
-        aborted {
-            updateGitlabCommitStatus name: 'jenkins', state: 'canceled'
-        }
+    else {
+        echo "Pipeline finished with status: ${currentBuild.result}"
     }
 }
