@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: m.filatova
+  description: Install kubeadm and kubectl for Kubernetes nodes on Ubuntu 22.04.
+  company: yadro
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+  galaxy_tags:
+    - kubernetes
+    - kubeadm
+    - kubectl
+    - ubuntu
+
+dependencies: []

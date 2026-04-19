@@ -1,0 +1,13 @@
+---
+argument_specs:
+  main:
+    short_description: Prepare a node for Kubernetes and install kubelet.
+    options:
+      kubernetes_version:
+        type: str
+        description: Kubernetes package branch expected to be configured on the host.
+        default: "1.32"
+      kubelet_cgroup_driver:
+        type: str
+        description: Cgroup driver passed to kubelet.
+        default: "systemd"

@@ -1,0 +1,9 @@
+---
+argument_specs:
+  main:
+    short_description: Install kubeadm and kubectl on Ubuntu 22.04.
+    options:
+      kubernetes_version:
+        type: str
+        description: Kubernetes repository branch used for package installation.
+        default: "1.32"

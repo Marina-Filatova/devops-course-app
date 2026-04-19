@@ -1,0 +1,74 @@
+---
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required system packages
+  ansible.builtin.apt:
+    name:
+      - kmod
+      - systemd
+    state: present
+
+- name: Disable swap
+  ansible.builtin.shell: |
+    swapoff -a
+    sed -i '/swap/d' /etc/fstab
+  changed_when: false
+  failed_when: false
+
+- name: Load kernel modules
+  community.general.modprobe:
+    name: "{{ item }}"
+    state: present
+  loop:
+    - overlay
+    - br_netfilter
+
+- name: Configure sysctl for Kubernetes
+  ansible.posix.sysctl:
+    name: "{{ item.name }}"
+    value: "{{ item.value }}"
+    state: present
+    reload: yes
+  loop:
+    - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
+    - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
+    - { name: 'net.ipv4.ip_forward', value: '1' }
+
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install kubelet
+  ansible.builtin.apt:
+    name: kubelet
+    state: present
+
+- name: Hold kubelet package
+  ansible.builtin.dpkg_selections:
+    name: kubelet
+    selection: hold
+
+- name: Create kubelet config directory
+  ansible.builtin.file:
+    path: /etc/default
+    state: directory
+    mode: '0755'
+
+- name: Configure kubelet cgroup driver
+  ansible.builtin.copy:
+    content: |
+      KUBELET_EXTRA_ARGS="--cgroup-driver={{ kubelet_cgroup_driver }}"
+    dest: /etc/default/kubelet
+    mode: '0644'
+  notify: restart kubelet
+
+- name: Enable kubelet service
+  ansible.builtin.systemd:
+    name: kubelet
+    enabled: yes
+    state: started
+    daemon_reload: yes

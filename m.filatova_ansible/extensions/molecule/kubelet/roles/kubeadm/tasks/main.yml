@@ -1,0 +1,65 @@
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: yes
+    cache_valid_time: 3600
+
+- name: Install required packages for adding repository
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gpg
+    state: present
+  register: kubeadm_required_packages_result
+  until: kubeadm_required_packages_result is succeeded
+  retries: 3
+  delay: 10
+
+- name: Create keyrings directory
+  ansible.builtin.file:
+    path: /etc/apt/keyrings
+    state: directory
+    mode: '0755'
+
+- name: Download Kubernetes repository key
+  ansible.builtin.get_url:
+    url: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
+    dest: /etc/apt/keyrings/kubernetes-apt-keyring.asc
+    mode: '0644'
+  register: kubeadm_repo_key_result
+  until: kubeadm_repo_key_result is succeeded
+  retries: 3
+  delay: 10
+
+- name: Convert Kubernetes key to gpg format
+  ansible.builtin.shell: |
+    cat /etc/apt/keyrings/kubernetes-apt-keyring.asc | gpg --dearmor > /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+  args:
+    creates: /etc/apt/keyrings/kubernetes-apt-keyring.gpg
+
+- name: Add Kubernetes repository
+  ansible.builtin.apt_repository:
+    repo: "deb [signed-by=/etc/apt/keyrings/kubernetes-apt-keyring.gpg] https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/ /"
+    state: present
+    filename: kubernetes
+    update_cache: yes
+
+- name: Install kubeadm and kubectl
+  ansible.builtin.apt:
+    name:
+      - kubeadm
+      - kubectl
+    state: present
+  register: kubeadm_install_result
+  until: kubeadm_install_result is succeeded
+  retries: 3
+  delay: 15
+
+- name: Hold kubeadm and kubectl packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubeadm
+    - kubectl

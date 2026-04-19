@@ -1,0 +1,17 @@
+---
+argument_specs:
+  main:
+    short_description: Install and configure CRI-O on Ubuntu 22.04.
+    options:
+      crio_version:
+        type: str
+        description: CRI-O repository branch and package version line.
+        default: "1.32"
+      crio_cgroup_driver:
+        type: str
+        description: Cgroup manager for the CRI-O runtime configuration.
+        default: "systemd"
+      crio_conmon_cgroup:
+        type: str
+        description: Conmon cgroup placement in the CRI-O runtime configuration.
+        default: "pod"
