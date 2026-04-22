@@ -6,5 +6,5 @@
   tasks:
     - name: Remove copied role 
       ansible.builtin.file:
-        path: "{{ playbook_dir }}/}/roles"
+        path: "{{ playbook_dir }}/roles"
         state: absent
