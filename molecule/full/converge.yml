@@ -1,0 +1,19 @@
+---
+- name: Full Kubernetes installation test
+  hosts: all
+  become: true
+  vars:
+    kubernetes_version: "1.32"
+    crio_version: "1.32"
+  tasks:
+    - name: Add Kubernetes repository and install kubeadm/kubectl
+      ansible.builtin.include_role:
+        name: "kubeadm"
+
+    - name: Install CRI-O container runtime
+      ansible.builtin.include_role:
+        name: crio
+
+    - name: Prepare system and install kubelet
+      ansible.builtin.include_role:
+        name: kubelet

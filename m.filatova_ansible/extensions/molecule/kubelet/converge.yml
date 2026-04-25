@@ -1,0 +1,14 @@
+---
+- name: Converge kubelet role
+  hosts: all
+  become: true
+  vars:
+    kubernetes_version: "1.32"
+  tasks:
+    - name: Include kubeadm role (for Kubernetes repository)
+      ansible.builtin.include_role:
+        name: kubeadm
+
+    - name: Include local kubelet role
+      ansible.builtin.include_role:
+        name: kubelet

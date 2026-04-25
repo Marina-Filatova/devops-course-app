@@ -1,0 +1,24 @@
+---
+- name: Verify kubeadm installation
+  hosts: all
+  become: true
+  tasks:
+    - name: Check if kubeadm is installed
+      ansible.builtin.command: which kubeadm
+      register: result
+      changed_when: false
+
+    - name: Assert kubeadm is installed
+      ansible.builtin.assert:
+        that:
+          - result.rc == 0
+
+    - name: Check if kubectl is installed
+      ansible.builtin.command: which kubectl
+      register: result
+      changed_when: false
+
+    - name: Assert kubectl is installed
+      ansible.builtin.assert:
+        that:
+          - result.rc == 0

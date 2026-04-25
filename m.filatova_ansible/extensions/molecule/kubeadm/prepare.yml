@@ -1,0 +1,17 @@
+---
+- name: Prepare role for testing
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Create roles directory
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/roles"
+        state: directory
+        mode: '0755'
+
+    - name: Copy kubeadm role to scenario
+      ansible.builtin.copy:
+        src: "{{ playbook_dir }}/../../../roles/kubeadm/"
+        dest: "{{ playbook_dir }}/roles/kubeadm/"
+        mode: preserve

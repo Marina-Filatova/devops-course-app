@@ -1,0 +1,21 @@
+---
+namespace: "yadro"
+name: "k8s"
+version: 1.0.0
+readme: README.md
+authors:
+  - m.filatova
+
+description: Ansible collection with roles for installing kubeadm, kubelet and CRI-O on Ubuntu 22.04.
+license_file: LICENSE
+tags: ["kubernetes", "crio", "kubeadm", "kubelet", "ubuntu"]
+dependencies: {}
+
+repository: https://education-git.yadro.com/education/devops/2026/m.filatova/app.git
+documentation: https://education-git.yadro.com/education/devops/2026/m.filatova/app.git
+homepage: https://education-git.yadro.com/education/devops/2026/m.filatova/app.git
+issues: https://education-git.yadro.com/education/devops/2026/m.filatova/app.git
+
+build_ignore:
+  - .gitignore
+  - changelogs/.plugin-cache.yaml
