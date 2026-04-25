@@ -1,0 +1,10 @@
+---
+- name: Cleanup test artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Remove copied role
+      ansible.builtin.file:
+        path: "{{ playbook_dir }}/roles"
+        state: absent

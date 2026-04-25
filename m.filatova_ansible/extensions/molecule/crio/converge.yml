@@ -1,0 +1,10 @@
+---
+- name: Converge crio role
+  hosts: all
+  become: true
+  vars: 
+    crio_version: "1.32"
+  tasks:
+    - name: Include local crio role
+      ansible.builtin.include_role:
+        name: crio

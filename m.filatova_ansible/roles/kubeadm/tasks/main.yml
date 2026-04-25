@@ -1,0 +1,52 @@
+- name: Update apt cache
+  ansible.builtin.apt:
+    update_cache: true
+    cache_valid_time: 3600
+
+- name: Install required packages for adding repository
+  ansible.builtin.apt:
+    name:
+      - apt-transport-https
+      - ca-certificates
+      - curl
+      - gpg
+      - python3-debian
+    state: present
+  register: kubeadm_required_packages_result
+  until: kubeadm_required_packages_result is succeeded
+  retries: 3
+  delay: 10
+
+- name: Add Kubernetes repository
+  ansible.builtin.deb822_repository:
+    name: kubernetes
+    types: deb
+    uris: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/"
+    suites: "/"
+    signed_by: "https://pkgs.k8s.io/core:/stable:/v{{ kubernetes_version }}/deb/Release.key"
+    state: present
+    enabled: true
+  register: kubeadm_repo_result
+  until: kubeadm_repo_result is succeeded
+  retries: 3
+  delay: 10
+
+- name: Install kubeadm and kubectl
+  ansible.builtin.apt:
+    name:
+      - kubeadm
+      - kubectl
+    state: present
+    update_cache: true
+  register: kubeadm_install_result
+  until: kubeadm_install_result is succeeded
+  retries: 3
+  delay: 15
+
+- name: Hold kubeadm and kubectl packages
+  ansible.builtin.dpkg_selections:
+    name: "{{ item }}"
+    selection: hold
+  loop:
+    - kubeadm
+    - kubectl
