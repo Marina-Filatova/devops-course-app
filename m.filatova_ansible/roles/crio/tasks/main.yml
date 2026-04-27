@@ -1,37 +1,4 @@
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: true
-    cache_valid_time: 3600
-
-- name: Install required packages
-  ansible.builtin.apt:
-    name:
-      - software-properties-common
-      - curl
-      - gpg
-      - apt-transport-https
-      - ca-certificates
-      - python3-debian
-    state: present
-  register: crio_required_packages_result
-  until: crio_required_packages_result is succeeded
-  retries: 3
-  delay: 10
-
-- name: Add CRI-O repository
-  ansible.builtin.deb822_repository:
-    name: cri-o
-    types: deb
-    uris: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ crio_version }}/deb/"
-    suites: "/"
-    signed_by: "https://download.opensuse.org/repositories/isv:/cri-o:/stable:/v{{ crio_version }}/deb/Release.key"
-    state: present
-    enabled: true
-  register: crio_repo_result
-  until: crio_repo_result is succeeded
-  retries: 3
-  delay: 10
-
+---
 - name: Install CRI-O
   ansible.builtin.apt:
     name: cri-o
@@ -57,9 +24,33 @@
     dest: /etc/crio/crio.conf.d/10-cgroup.conf
     mode: '0644'
 
+- name: Configure CRI-O capabilities
+  ansible.builtin.copy:
+    content: |
+      [crio.runtime]
+      default_capabilities = [
+          "CHOWN",
+          "DAC_OVERRIDE",
+          "FSETID",
+          "FOWNER",
+          "SETGID",
+          "SETUID",
+          "SETPCAP",
+          "NET_BIND_SERVICE",
+          "NET_RAW",
+          "KILL",
+      ]
+    dest: /etc/crio/crio.conf.d/02-capabilities.conf
+    mode: '0644'
+  notify: restart crio
+
+- name: Reload systemd daemon
+  ansible.builtin.systemd:
+    daemon_reload: true
+
 - name: Enable and start CRI-O
   ansible.builtin.systemd:
     name: crio
     enabled: true
     state: started
-    daemon_reload: true
+  when: not ansible_check_mode

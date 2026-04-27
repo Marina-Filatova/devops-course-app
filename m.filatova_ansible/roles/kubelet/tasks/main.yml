@@ -1,22 +1,24 @@
 ---
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: yes
-    cache_valid_time: 3600
-
 - name: Install required system packages
   ansible.builtin.apt:
     name:
       - kmod
       - systemd
     state: present
+    update_cache: true
 
-- name: Disable swap
-  ansible.builtin.shell: |
-    swapoff -a
-    sed -i '/swap/d' /etc/fstab
-  changed_when: false
+- name: Disable swap immediately
+  ansible.builtin.command:
+    cmd: swapoff -a
+  when: ansible_swaptotal_mb > 0
   failed_when: false
+  changed_when: false
+
+- name: Remove swap from fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: '.*swap.*'
+    state: absent
 
 - name: Load kernel modules
   community.general.modprobe:
@@ -31,32 +33,22 @@
     name: "{{ item.name }}"
     value: "{{ item.value }}"
     state: present
-    reload: yes
+    reload: true
   loop:
     - { name: 'net.bridge.bridge-nf-call-iptables', value: '1' }
     - { name: 'net.bridge.bridge-nf-call-ip6tables', value: '1' }
     - { name: 'net.ipv4.ip_forward', value: '1' }
 
-- name: Update apt cache
-  ansible.builtin.apt:
-    update_cache: yes
-    cache_valid_time: 3600
-
 - name: Install kubelet
   ansible.builtin.apt:
-    name: kubelet
+    name: kubelet=1.32.13-1.1
     state: present
 
 - name: Hold kubelet package
   ansible.builtin.dpkg_selections:
     name: kubelet
     selection: hold
-
-- name: Create kubelet config directory
-  ansible.builtin.file:
-    path: /etc/default
-    state: directory
-    mode: '0755'
+  when: not ansible_check_mode
 
 - name: Configure kubelet cgroup driver
   ansible.builtin.copy:
@@ -69,6 +61,7 @@
 - name: Enable kubelet service
   ansible.builtin.systemd:
     name: kubelet
-    enabled: yes
+    enabled: true
     state: started
-    daemon_reload: yes
+    daemon_reload: true
+  when: not ansible_check_mode
