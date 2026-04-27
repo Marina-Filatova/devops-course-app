@@ -1,0 +1,61 @@
+---
+- name: Check if cluster already initialized
+  ansible.builtin.stat:
+    path: /etc/kubernetes/admin.conf
+  register: kubeadm_conf
+
+- name: Initialize Kubernetes cluster
+  ansible.builtin.command:
+    cmd: >
+      kubeadm init
+      --pod-network-cidr={{ k8s_pod_network_cidr }}
+      --cri-socket=unix:///var/run/crio/crio.sock
+  when: not kubeadm_conf.stat.exists
+  register: kubeadm_init_result
+  changed_when: "'initialized successfully' in kubeadm_init_result.stdout"
+
+- name: Create .kube directory for root
+  ansible.builtin.file:
+    path: /root/.kube
+    state: directory
+    mode: '0700'
+
+- name: Copy admin.conf to root kubeconfig
+  ansible.builtin.copy:
+    src: /etc/kubernetes/admin.conf
+    dest: /root/.kube/config
+    remote_src: true
+    mode: '0600'
+
+- name: Apply Calico CNI manifest
+  ansible.builtin.command:
+    cmd: kubectl apply -f {{ calico_manifest_url }}
+  environment:
+    KUBECONFIG: /root/.kube/config
+  when: not kubeadm_conf.stat.exists
+  register: calico_result
+  changed_when: >
+    'created' in calico_result.stdout or
+    'configured' in calico_result.stdout
+  retries: 3
+  delay: 10
+  until: calico_result is succeeded
+
+- name: Wait for node to become Ready
+  ansible.builtin.command:
+    cmd: kubectl wait --for=condition=ready node {{ ansible_hostname }} --timeout=300s
+  environment:
+    KUBECONFIG: /root/.kube/config
+  when: not kubeadm_conf.stat.exists
+
+- name: Get join command
+  ansible.builtin.command:
+    cmd: kubeadm token create --print-join-command
+  register: join_command_result
+  changed_when: false
+  environment:
+    KUBECONFIG: /root/.kube/config
+
+- name: Save join command as fact
+  ansible.builtin.set_fact:
+    kubeadm_join_command: "{{ join_command_result.stdout }}"

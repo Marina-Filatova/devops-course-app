@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  author: m.filatova
+  description: Join worker nodes to an existing Kubernetes cluster via kubeadm.
+  company: yadro
+  license: GPL-2.0-or-later
+  min_ansible_version: "2.14"
+  platforms:
+    - name: Ubuntu
+      versions:
+        - jammy
+  galaxy_tags:
+    - kubernetes
+    - kubeadm
+    - ubuntu
+ 
+dependencies: []
+ 

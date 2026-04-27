@@ -1,0 +1,131 @@
+---
+- name: Verify master node initialization
+  hosts: master
+  become: true
+  tasks:
+    - name: Check admin.conf exists
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: admin_conf
+
+    - name: Assert admin.conf is present
+      ansible.builtin.assert:
+        that:
+          - admin_conf.stat.exists
+          - admin_conf.stat.isreg
+        fail_msg: "/etc/kubernetes/admin.conf not found — kubeadm init did not run"
+        success_msg: "/etc/kubernetes/admin.conf exists"
+
+    - name: Check .kube directory
+      ansible.builtin.stat:
+        path: /root/.kube
+      register: kube_dir
+
+    - name: Assert .kube directory exists
+      ansible.builtin.assert:
+        that:
+          - kube_dir.stat.exists
+          - kube_dir.stat.isdir
+        fail_msg: "/root/.kube directory was not created"
+        success_msg: "/root/.kube directory exists"
+
+    - name: Check kubeconfig
+      ansible.builtin.stat:
+        path: /root/.kube/config
+      register: kubeconfig
+
+    - name: Assert kubeconfig exists with correct permissions
+      ansible.builtin.assert:
+        that:
+          - kubeconfig.stat.exists
+          - kubeconfig.stat.mode == '0600'
+        fail_msg: "/root/.kube/config missing or has wrong permissions (expected 0600)"
+        success_msg: "/root/.kube/config exists with mode 0600"
+
+    - name: Read kubeconfig content
+      ansible.builtin.slurp:
+        src: /root/.kube/config
+      register: kubeconfig_raw
+
+    - name: Assert kubeconfig is valid
+      ansible.builtin.assert:
+        that:
+          - "'apiVersion' in (kubeconfig_raw.content | b64decode)"
+          - "'kind: Config' in (kubeconfig_raw.content | b64decode)"
+        fail_msg: "kubeconfig does not look like a valid kubeconfig"
+        success_msg: "kubeconfig content is valid"
+
+    - name: Check cluster-info
+      ansible.builtin.command:
+        cmd: kubectl cluster-info
+      register: cluster_info
+      changed_when: false
+      failed_when: "'running at' not in cluster_info.stdout"
+
+    - name: Check nodes output
+      ansible.builtin.command:
+        cmd: kubectl get nodes --no-headers
+      register: nodes_output
+      changed_when: false
+      failed_when: "'Ready' not in nodes_output.stdout"
+
+    - name: Assert both nodes are Ready
+      ansible.builtin.assert:
+        that:
+          - nodes_output.stdout_lines | length == 2
+          - nodes_output.stdout | regex_findall('Ready') | length == 2
+        fail_msg: "Expected 2 Ready nodes, got: {{ nodes_output.stdout }}"
+        success_msg: "All 2 nodes are Ready"
+
+- name: Verify worker nodes joined the cluster
+  hosts: workers
+  become: true
+  tasks:
+    - name: Check kubelet.conf exists on worker
+      ansible.builtin.stat:
+        path: /etc/kubernetes/kubelet.conf
+      register: worker_kubelet_conf
+
+    - name: Assert worker has joined the cluster
+      ansible.builtin.assert:
+        that:
+          - worker_kubelet_conf.stat.exists
+        fail_msg: "/etc/kubernetes/kubelet.conf not found — node did not join"
+        success_msg: "{{ inventory_hostname }} has joined the cluster"
+
+- name: Verify idempotency guard on master
+  hosts: master
+  become: true
+  tasks:
+    - name: Get admin.conf stat again
+      ansible.builtin.stat:
+        path: /etc/kubernetes/admin.conf
+      register: admin_conf_recheck
+
+    - name: Assert admin.conf was not recreated
+      ansible.builtin.assert:
+        that:
+          - admin_conf_recheck.stat.exists
+        fail_msg: "admin.conf disappeared after second run"
+        success_msg: "admin.conf is stable (idempotency confirmed)"
+
+- name: Print summary
+  hosts: all
+  become: true
+  tasks:
+    - name: Check kubeadm binary exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/kubeadm
+      register: kubeadm_bin
+
+    - name: Check kubectl binary exists
+      ansible.builtin.stat:
+        path: /usr/local/bin/kubectl
+      register: kubectl_bin
+
+    - name: Summary per node
+      ansible.builtin.debug:
+        msg:
+          - "Node: {{ inventory_hostname }}"
+          - "kubeadm present: {{ kubeadm_bin.stat.exists }}"
+          - "kubectl present: {{ kubectl_bin.stat.exists }}"
