@@ -7,6 +7,7 @@
 - [Currency REST API](#currency-rest-api)
 - [Ansible: Установка Kubernetes](#ansible-установка-kubernetes)
 - [Создание кластера](#этапы-создания-кластера)
+- [Развёртывание приложения в Kubernetes](#развертывание-приложения)
 
 ---
 
@@ -327,3 +328,91 @@ kubectl run busybox --image=busybox:latest --restart=Never --image-pull-policy=I
 ```
 
 На всех виртуальных машинах есть закешированный образ busybox.
+
+# [Развёртывание приложения в Kubernetes](#развертывание-приложения)
+## Что сделано
+ 
+Приложение `currency-rest-api` развёрнуто в кластере Kubernetes (1 мастер + 2 воркера)
+с использованием CRI-O и CNI-плагина Calico. Доступ снаружи организован через
+nginx Ingress Controller. Настроен HTTPS с self-signed сертификатом.
+ 
+## Структура манифестов
+ 
+```
+k8s_manifests/
+├── 00-ingress-controller.yml   # DaemonSet nginx ingress
+├── 01-namespace.yml            # Namespace currency-api
+├── 02-deployment.yml           # Deployment (2 реплики, RollingUpdate, anti-affinity)
+├── 03-service.yml              # Service ClusterIP
+└── 04-ingress.yml              # Ingress (HTTP + HTTPS)
+```
+ 
+Файлы пронумерованы чтобы `kubectl apply -f k8s_manifests/` применял их
+в правильном порядке.
+ 
+## Требования
+ 
+- Kubernetes кластер >= 1.32
+- kubectl настроенный на кластер (`~/.kube/config`)
+- openssl (для генерации TLS-сертификата)
+## Деплой
+ 
+### 1. Настройка kubectl
+ 
+```bash
+mkdir -p ~/.kube
+scp master@10.184.0.50:~/.kube/config ~/.kube/config
+```
+ 
+### 2. Генерация TLS-сертификата и создание Secret
+ 
+```bash
+openssl req -x509 -nodes -days 365 -newkey rsa:2048 -keyout tls.key -out tls.crt -subj "/CN=currency-api.local/O=currency-api"
+ 
+kubectl create secret tls currency-api-tls --cert=tls.crt --key=tls.key -n currency-api
+ 
+rm tls.crt tls.key
+```
+ 
+### 3. Применение манифестов
+ 
+```bash
+kubectl apply -f k8s_manifests/
+```
+ 
+### 4. Локальный DNS 
+ 
+```bash
+echo "10.184.0.49  currency-api.local" | sudo tee -a /etc/hosts
+```
+ 
+### 5. Проверка
+ 
+```bash
+curl http://currency-api.local/info
+ 
+curl -k https://currency-api.local/info # -k для игнорирования предупреждения из-за Self-signed сертификата
+```
+ 
+Ожидаемый ответ:
+```json
+{"version": "1.0.0", "service": "currency", "author": "m.filatova"}
+```
+ 
+## Особенности реализации
+ 
+### DaemonSet + HostPort для ingress-контроллера
+
+Кластер без внешнего балансировщика, поэтому ingress поднят на каждой ноде: DaemonSet - по одному поду на ноду, HostPort 80/443 -  принимаем трафик напрямую.
+ 
+### 2 реплики с podAntiAffinity
+ 
+В кластере два воркера — запущено по одной реплике на каждом.
+`podAntiAffinity` нужен чтобы обе реплики не лежали на одной ноде. Если воркер упадёт — вторая реплика на другой ноде
+продолжит обрабатывать запросы.
+ 
+### Self-signed сертификат
+ 
+Кластер за VPN и без публичного домена, поэтому получается испльзовать только это. В продакш с публичным доменом будет правильно:
+cert-manager + Let's Encrypt + автоматическое обновление сертификата каждые 90 дней.
+ 
