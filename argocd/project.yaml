@@ -1,0 +1,17 @@
+apiVersion: argoproj.io/v1alpha1
+kind: AppProject
+metadata:
+  name: currency-api
+  namespace: argocd
+spec:
+  description: Currency REST API
+  sourceRepos:
+    - https://education-git.yadro.com/education/devops/2026/m.filatova/app.git
+  destinations:
+    - namespace: currency-api-staging
+      server: https://kubernetes.default.svc
+    - namespace: currency-api-production
+      server: https://kubernetes.default.svc
+  clusterResourceWhitelist:
+    - group: ""
+      kind: Namespace
