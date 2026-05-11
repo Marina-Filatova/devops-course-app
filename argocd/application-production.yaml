@@ -8,7 +8,7 @@ metadata:
     argocd-image-updater.argoproj.io/api.allow-tags: regexp:^v[0-9]+\.[0-9]+\.[0-9]+$
     argocd-image-updater.argoproj.io/api.update-strategy: semver
     argocd-image-updater.argoproj.io/write-back-method: git:secret:argocd/git-creds
-    argocd-image-updater.argoproj.io/git-branch: manifests
+    argocd-image-updater.argoproj.io/git-branch: m.filatova/manifests
     argocd-image-updater.argoproj.io/write-back-target: helmvalues:helm/currency-api/values-production.yaml
     argocd-image-updater.argoproj.io/api.helm.image-name: image.repository
     argocd-image-updater.argoproj.io/api.helm.image-tag: image.tag
@@ -16,7 +16,7 @@ spec:
   project: currency-api
   source:
     repoURL: https://education-git.yadro.com/education/devops/2026/m.filatova/app.git
-    targetRevision: manifests
+    targetRevision: m.filatova/manifests
     path: helm/currency-api
     helm:
       valueFiles:
