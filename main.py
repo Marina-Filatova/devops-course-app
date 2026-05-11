@@ -44,6 +44,10 @@ class Handler(BaseHTTPRequestHandler):
         if path == "" or path == "/":
             self._send_error("Not found", status=404)
             return
+        
+        if path == "/healthz":
+            self._send_json({"status": "ok"})
+            return
 
         if path == "/info":
             info = self._info_uc.get_info(service="currency")
