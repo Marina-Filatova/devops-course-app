@@ -1,0 +1,49 @@
+replicaCount: 2
+
+image:
+  repository: mfilatova/currency-rest-api
+  tag: v1.0.1-test 
+  pullPolicy: IfNotPresent
+
+namespace: currency-api
+
+resources:
+  requests:
+    cpu: "100m"
+    memory: "128Mi"
+  limits:
+    cpu: "500m"
+    memory: "256Mi"
+
+probes:
+  startup:
+    path: /healthz
+    port: 8000
+    failureThreshold: 6
+    periodSeconds: 5
+  liveness:
+    path: /healthz
+    port: 8000
+    periodSeconds: 20
+    failureThreshold: 3
+  readiness:
+    path: /healthz
+    port: 8000
+    periodSeconds: 10
+    failureThreshold: 3
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 8000
+
+ingress:
+  enabled: true
+  className: nginx
+  host: currency-api.local
+  tls:
+    enabled: true
+    secretName: currency-api-tls
+
+podAntiAffinity:
+  enabled: true
