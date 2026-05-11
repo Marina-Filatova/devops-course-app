@@ -1,0 +1,6 @@
+namespace: currency-api-staging
+
+ingress:
+  host: staging.currency-api.local
+  tls:
+    secretName: currency-api-staging-tls

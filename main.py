@@ -45,12 +45,18 @@ class Handler(BaseHTTPRequestHandler):
             self._send_error("Not found", status=404)
             return
 
+        if path == "/healthz":
+            self._send_json({"status": "ok"})
+            return
+
         if path == "/info":
             info = self._info_uc.get_info(service="currency")
             payload = {
                 "version": info.version,
                 "service": info.service,
                 "author": info.author,
+                "status": "ok",
+                "deploy": "argocd",               
             }
             self._send_json(payload)
             return
