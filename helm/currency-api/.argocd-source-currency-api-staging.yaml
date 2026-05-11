@@ -4,5 +4,5 @@ helm:
     value: mfilatova/currency-rest-api
     forcestring: true
   - name: image.tag
-    value: main-test003
+    value: main-test004
     forcestring: true
