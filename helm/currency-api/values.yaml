@@ -2,7 +2,7 @@ replicaCount: 2
 
 image:
   repository: mfilatova/currency-rest-api
-  tag: v1.0.1
+  tag: v1.0.1-test 
   pullPolicy: IfNotPresent
 
 namespace: currency-api

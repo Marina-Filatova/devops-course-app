@@ -1,6 +1,0 @@
-# Root molecule config - for pointion on scenarios
-
----
-scenario:
-  name: full
-  directory: molecule/full
