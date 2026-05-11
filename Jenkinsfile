@@ -39,7 +39,7 @@ node('staging') {
                 if (isMain() || isTag()) {
                     withCredentials([usernamePassword(
                         credentialsId: 'docker-hub-creditnails',
-                        usernameVariable: 'DOCKER_USER'
+                        usernameVariable: 'DOCKER_USER',
                         passwordVariable: 'DOCKER_PASS'
                     )]) {
                         sh '''
