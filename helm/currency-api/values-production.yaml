@@ -1,0 +1,6 @@
+namespace: currency-api-production
+
+ingress:
+  host: currency-api.local
+  tls:
+    secretName: currency-api-tls

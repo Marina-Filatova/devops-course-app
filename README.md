@@ -8,6 +8,7 @@
 - [Ansible: Установка Kubernetes](#ansible-установка-kubernetes)
 - [Создание кластера](#этапы-создания-кластера)
 - [Развёртывание приложения в Kubernetes](#развертывание-приложения)
+- [Автоматическая доставка изменений](#автоматическая-доставка-изменений-в-kubernetes)
 
 ---
 
@@ -53,7 +54,6 @@ Ansible-коллекция yadro.k8s для установки CRI-O, kubeadm и
 ## Структура проекта
 
 ```
-text
 .
 ├── inventory/
 │   └── hosts.ini                 # Инвентори виртуальных машин
@@ -62,28 +62,31 @@ text
 │   └── bootstrap.yml             # Плейбук установки пакетов k8s
 ├── group_vars/
 │   └── all/
-|       ├── main.yml              # Общие переменные (IP зеркала)
+│       ├── main.yml              # Общие переменные (IP зеркала)
 │       └── vault.yml             # Зашифрованные секреты (sudo пароль)
 ├── host_vars/                    # Переменные отдельных хостов
-│   ├── master-node/                     
-│   |   └── main.yml              # Ansible_ssh_private_key_file
-|    ...
-├── molecule/                     # Тесты Molecule
-│   ├── full-cluster-k8s/..       # Сценарий тестирования взаимодействия ролей
-│   └── full/...                  # Полный сценарий тестирования установки пакетов
+├── helm/                         # Helm chart для деплоя приложения
+│   └── currency-api/
+│       ├── Chart.yaml
+│       ├── values.yaml
+│       ├── values-staging.yaml
+│       ├── values-production.yaml
+│       └── templates/
+├── argocd/                       # ArgoCD манифесты
+│   ├── project.yaml
+│   ├── application-staging.yaml
+│   └── application-production.yaml
 ├── m.filatova_ansible/           # Ansible коллекция
 │   ├── galaxy.yml
-│   ├── roles/
-│   │   ├── k8s_master            # Роль инициализации кластера
-│   │   ├── k8s_worker            # Роль подключения нод
-│   │   ├── crio/                 # Роль установки CRI-O
-│   │   ├── kubeadm/              # Роль установки kubeadm + kubectl
-│   │   └── kubelet/              # Роль подготовки системы + kubelet
-│   └── extensions/
-│       └── molecule/             # Тесты отдельных ролей
+│   └── roles/
+│       ├── k8s_master            # Роль инициализации кластера
+│       ├── k8s_worker            # Роль подключения нод
+│       ├── crio/                 # Роль установки CRI-O
+│       ├── kubeadm/              # Роль установки kubeadm + kubectl
+│       └── kubelet/              # Роль подготовки системы + kubelet
 ├── requirements.yml              # Зависимости коллекций
 ├── ansible.cfg                   # Конфигурация Ansible
-└── .vault_pass                   # Пароль для Vault (в .gitignore)
+└── Jenkinsfile                   # CI/CD pipeline
 ```
 
 ## Требования
@@ -416,3 +419,107 @@ curl -k https://currency-api.local/info # -k для игнорирования �
 Кластер за VPN и без публичного домена, поэтому получается испльзовать только это. В продакш с публичным доменом будет правильно:
 cert-manager + Let's Encrypt + автоматическое обновление сертификата каждые 90 дней.
  
+
+# [Автоматическая доставка изменений в Kubernetes]((#автоматическая-доставка-изменений-в-kubernetes))
+ 
+## Что сделано
+ 
+Организован GitOps-процесс автоматической доставки изменений в k8s-кластер.
+
+## Общая схема
+
+1. Разработчик вносит изменения в код приложения в отдельной ветке формата `<username>/<short-description>`.
+2. Изменения попадают в `main` только через Merge Request.
+3. Jenkins pipeline запускается после изменений в репозитории.
+4. Jenkins выполняет проверки, собирает Docker image и отправляет его в DockerHub.
+5. ArgoCD Image Updater отслеживает новые Docker image tags.
+6. Image Updater обновляет Helm values-файлы в ветке `m.filatova/manifests`.
+7. ArgoCD видит изменения в Git и автоматически синхронизирует приложение в Kubernetes.
+
+## Компоненты
+ 
+
+- **Jenkins** — сборка приложения, запуск проверок и публикация Docker image.
+- **DockerHub** — registry для хранения Docker images.
+- **Helm** — шаблонизация Kubernetes manifests.
+- **ArgoCD** — GitOps-доставка приложения в Kubernetes-кластер.
+- **ArgoCD Image Updater** — автоматическое обновление image tag в Helm values.
+ 
+## Окружения
+ 
+Проект разворачивается в два окружения:
+
+| Окружение | Namespace | ArgoCD Application | 
+|---|---|---|
+| Staging | `currency-api-staging` | `currency-api-staging` | 
+| Production | `currency-api-production` | `currency-api-production` |
+
+
+## Полный цикл 
+ 
+```
+1. git push → main
+2. Jenkins: lint + SAST → docker build → docker push
+   тег: main-<git-sha> для staging, v1.x.x для production
+3. ArgoCD Image Updater (каждые 2 мин):
+   видит новый тег → коммит в ветку m.filatova/manifests
+4. ArgoCD:
+   видит коммит → kubectl apply → RollingUpdate в кластере
+5. Нулевой даунтайм: maxUnavailable=0, maxSurge=1
+   readinessProbe гарантирует что новый под готов до удаления старого
+```
+ 
+## Почему ArgoCD, а не kubectl apply или helm upgrade
+ 
+**kubectl apply** — простейший вариант. Jenkins может вызвать `kubectl apply` напрямую. У этого подхода нет наглядности, нет истории деплоев, Jenkins должен иметь доступ к кластеру, нет автоматической синхронизации при ручных изменениях в кластере.
+ 
+**ArgoCD** — реализует GitOps. Jenkins не знает о кластере вообще — он только собирает образ и пушит в Docker Hub. ArgoCD сам следит за состоянием и синхронизирует кластер с git. Преимущества:
+
+## Структура веток
+ 
+```
+main                      ← защищённая ветка, только через MR
+m.filatova/homework-8     ← рабочая ветка ДЗ
+m.filatova/manifests      ← только helm chart, ArgoCD смотрит сюда
+                            Image Updater коммитит обновления тегов сюда
+```
+ 
+Отдельная ветка `m.filatova/manifests` нужна, чтобы автоматические коммиты ArgoCD Image Updater не попадали в защищённый `main` и не запускали сборку и публикацию Docker-образа. Jenkins может видеть эту ветку, но этап Build & Push ограничен только `main`, `master`, MR и tag, поэтому auto-commit в manifests не приводит к новой сборке образа.
+ 
+## Troubleshooting
+
+### Ошибка `ImagePullBackOff` и `manifest unknown`
+
+Причина: Kubernetes пытался скачать Docker image tag, которого нет в DockerHub.
+
+Нужно было проверить, что tag в Helm values реально существует в DockerHub:
+
+```yaml
+image:
+  repository: mfilatova/currency-rest-api
+  tag: main-a1b2c3d
+```
+
+Для staging tag должен иметь формат:
+
+```text
+main-<git_sha>
+```
+
+Для production tag должен иметь формат:
+
+```text
+vX.Y.Z
+```
+
+## Definition of Done
+
+Реализована автоматическая доставка изменений приложения в Kubernetes-кластер:
+
+1. При изменении кода Jenkins автоматически собирает Docker image.
+2. Docker image отправляется в DockerHub.
+3. ArgoCD Image Updater обнаруживает новый image tag.
+4. Image Updater обновляет Helm values в Git.
+5. ArgoCD автоматически синхронизирует изменения в Kubernetes.
+6. Приложение обновляется в кластере через rolling update.
+
