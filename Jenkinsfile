@@ -29,36 +29,24 @@ node('staging') {
         }
 
         if (isMR() || isMain() || isTag()) {
-            stage ('Build'){
-                    def imageTag = env.TAG_NAME ?: env.BRANCH_NAME.replace('/', '-')
-                    def fullImageName = "mfilatova/currency-rest-api:${imageTag}"
-                    
-                    echo "Building image: ${fullImageName}"
-                    sh "docker build -t ${fullImageName} ."
-                    
-                    if (isMain() || isTag()) {
-                        echo "Pushing to Docker Hub..."
-                        withCredentials([usernamePassword(
-                            credentialsId: 'docker-hub-credentials',
-                            usernameVariable: 'DOCKER_USER',
-                            passwordVariable: 'DOCKER_PASS'
-                        )]) {
-                            sh "docker login -u ${DOCKER_USER} -p ${DOCKER_PASS}"
-                            sh "docker push ${fullImageName}"
-                        }
-                    }                   
-                    env.IMAGE_TAG_FOR_DEPLOY = imageTag
-            }
-        }
-        
-        if (isMain() || isTag()){
-            stage('Deploy'){
-                def environment = isMain() ? 'staging' : 'production'
-                echo "Deploying ${env.IMAGE_TAG_FOR_DEPLOY} to ${environment}..."
-                build job: 'app-main-deploy', parameters: [
-                    string(name: 'IMAGE_TAG', value: env.IMAGE_TAG_FOR_DEPLOY),
-                    string(name: 'ENVIRONMENT', value: environment)
-                ]
+            stage('Build & Push') {
+                def gitSha    = sh(script: 'git rev-parse --short HEAD', returnStdout: true).trim()
+                def imageTag  = env.TAG_NAME ?: "main-${gitSha}"
+                def fullImage = "mfilatova/currency-rest-api:${imageTag}"
+
+                sh "docker build -t ${fullImage} ."
+
+                if (isMain() || isTag()) {
+                    withCredentials([usernamePassword(
+                        credentialsId: 'docker-hub-credentials',
+                        usernameVariable: 'DOCKER_USER',
+                        passwordVariable: 'DOCKER_PASS'
+                    )]) {
+                        sh 'echo "$DOCKER_PASS" | docker login -u "$DOCKER_USER" --password-stdin'
+                        sh "docker push ${fullImage}"
+                    }
+                    echo "Pushed ${fullImage}. ArgoCD Image Updater handles the rest."
+                }
             }
         }
     
