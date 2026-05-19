@@ -20,6 +20,9 @@ spec:
       labels:
         app: currency-api
     spec:
+      imagePullSecrets:
+        - name: dockerhub-secret
+        
       {{- if .Values.podAntiAffinity.enabled }}
       affinity:
         podAntiAffinity:
