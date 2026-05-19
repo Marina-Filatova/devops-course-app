@@ -55,7 +55,7 @@ class Handler(BaseHTTPRequestHandler):
                 "version": info.version,
                 "service": info.service,
                 "author": info.author,
-                "status": "ok",
+                "status": "okay",
                 "deploy": "argocd",
             }
             self._send_json(payload)
